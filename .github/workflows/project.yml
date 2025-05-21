@@ -8,28 +8,43 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-    - name: Set up GHC
-      uses: haskell/actions/setup@v1
+    - name: Set up Haskell (GHC + Cabal)
+      uses: haskell/actions/setup@v2
       with:
         ghc-version: '9.2.7'
+        cabal-version: '3.8.1.0'
 
-    - name: Install cabal
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cabal-install
+    - name: Cache Cabal
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cabal/store
+          dist-newstyle
+        key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}
+        restore-keys: |
+          ${{ runner.os }}-cabal-
 
-    - name: Update cabal package list
+    - name: Update package list
       run: cabal update
 
-    - name: Build
-      run: cabal build
+    - name: Install hlint
+      run: cabal install hlint
 
-    - name: Run
-      run: cabal run
+    - name: Build dependencies
+      run: cabal v2-build all --only-dependencies -j8
+
+    - name: Build project
+      run: cabal v2-build -j8
+
+    - name: Run hlint
+      run: ~/.cabal/bin/hlint src
+
+    - name: Run WebScraper
+      run: cabal run WebScraper
 

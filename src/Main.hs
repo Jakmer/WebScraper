@@ -1,5 +1,6 @@
 module Main where
 
-main :: IO ()
-main = putStrLn "Hello from Main!"
+import DataFetcher (fetchData)
 
+main :: IO ()
+main = fetchData
