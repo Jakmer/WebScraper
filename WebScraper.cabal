@@ -1,0 +1,12 @@
+cabal-version:       2.4
+name:                WebScraper
+version:             0.1.0.0
+build-type:          Simple
+license:             MIT
+synopsis:            Web scraper
+category:            Web
+
+executable WebScraper
+  main-is:             src/Main.hs
+  build-depends:       base >=4.7 && <5
+  default-language:    Haskell2010
