@@ -1,5 +1,7 @@
 module Main where
 
+import HtmlFetcher (fetchHtml)
+
 main :: IO ()
-main = putStrLn "Hello from main!"
+main = fetchHtml "https://example.com"
 
