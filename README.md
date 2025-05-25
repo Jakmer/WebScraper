@@ -2,7 +2,8 @@
 
 Build:
 
-    cabal build
+    cabal v2-build -j8
+
 
 Run:
 
