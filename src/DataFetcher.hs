@@ -27,13 +27,14 @@ instance FromJSON ExchangeRates
 
 currencies :: [String]
 currencies = ["EUR", "USD", "CHF", "GBP"]
+numOfLastCurr = 10
 
 fetchData :: IO ()
 fetchData = mapM_ fetchDataForCurrency currencies
 
 fetchDataForCurrency :: String -> IO ()
 fetchDataForCurrency curr = do
-    let url = "https://api.nbp.pl/api/exchangerates/rates/A/" ++ curr ++ "/last/10/?format=json"
+    let url = "https://api.nbp.pl/api/exchangerates/rates/A/" ++ curr ++ "/last/" ++ show numOfLastCurr ++ "/?format=json"
     request <- parseRequest url
     response <- httpLBS request
     let body = getResponseBody response
