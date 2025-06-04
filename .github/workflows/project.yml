@@ -33,11 +33,17 @@ jobs:
     - name: Update package list
       run: cabal update
 
+    - name: Install hlint
+      run: cabal install hlint
+
     - name: Build dependencies
       run: cabal v2-build all --only-dependencies -j8
 
     - name: Build project
       run: cabal v2-build -j8
+
+    - name: Run hlint
+      run: ~/.cabal/bin/hlint src
 
     - name: Run WebScraper
       run: cabal run WebScraper

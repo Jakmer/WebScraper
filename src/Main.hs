@@ -1,7 +1,6 @@
 module Main where
 
-import HtmlFetcher (fetchHtml)
+import DataFetcher (fetchData)
 
 main :: IO ()
-main = fetchHtml "https://example.com"
-
+main = fetchData
