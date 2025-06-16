@@ -1,13 +1,17 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 module DataFetcher where
+
 import GHC.Generics
 import Data.Aeson
-import qualified Data.ByteString.Lazy.Char8 as L8
 import Network.HTTP.Simple
 import Data.List (sortBy, maximumBy, minimumBy)
 import Data.Ord (comparing, Down(..))
 import Text.Printf
+import System.Directory (createDirectoryIfMissing)
+import Analytics
+import Charts
 
 data Rate = Rate
     { no :: String
@@ -47,9 +51,26 @@ numOfLastCurr = 100
 fetchData :: IO ()
 fetchData = do
     putStrLn "=== FETCHING AND ANALYZING EXCHANGE RATES ==="
+    createDirectoryIfMissing True "results"
+    
     analyses <- mapM fetchAndAnalyzeCurrency currencies
-    putStrLn "\n=== ANALYSIS SUMMARY ==="
+    allRatesData <- mapM fetchRatesForAnalytics currencies
+    dateRatesData <- mapM fetchDateRatesForCharts currencies
+    
+    putStrLn "\n=== BASIC ANALYSIS SUMMARY ==="
     printSummaryAnalysis analyses
+    
+    putStrLn "\n=== ADVANCED ANALYTICS ==="
+    let advancedReport = generateAdvancedReport allRatesData
+    mapM_ putStrLn advancedReport
+    
+    putStrLn "\n=== GENERATING CHARTS ==="
+    generateAllCharts allRatesData dateRatesData
+    
+    exportToCSV analyses
+    exportAdvancedAnalysis allRatesData
+    
+    putStrLn "\n✅ Analysis complete! Check 'results/' directory for output files."
 
 fetchAndAnalyzeCurrency :: String -> IO CurrencyAnalysis
 fetchAndAnalyzeCurrency curr = do
@@ -66,44 +87,58 @@ fetchAndAnalyzeCurrency curr = do
             putStrLn $ "Error parsing data for: " ++ curr
             return $ CurrencyAnalysis curr "Unknown" 0 0 0 0 0 "Unknown" 0
 
+fetchRatesForAnalytics :: String -> IO (String, [Double])
+fetchRatesForAnalytics curr = do
+    let url = "https://api.nbp.pl/api/exchangerates/rates/A/" ++ curr ++ "/last/" ++ show numOfLastCurr ++ "/?format=json"
+    request <- parseRequest url
+    response <- httpLBS request
+    let body = getResponseBody response
+    case decode body :: Maybe ExchangeRates of
+        Just ex -> do
+            let rateValues = reverse $ map mid (rates ex)
+            return (curr, rateValues)
+        Nothing -> do
+            putStrLn $ "Error parsing data for analytics: " ++ curr
+            return (curr, [])
+
 analyzeCurrency :: ExchangeRates -> CurrencyAnalysis
 analyzeCurrency ex = 
     let rateValues = map mid (rates ex)
         sortedRates = sortBy (comparing mid) (rates ex)
-        minRate = mid $ head sortedRates
-        maxRate = mid $ last sortedRates
+        minRateValue = mid $ head sortedRates
+        maxRateValue = mid $ last sortedRates
         avgRate = sum rateValues / fromIntegral (length rateValues)
         sortedByDate = rates ex
-        currentRate = mid $ head sortedByDate
+        currentRateValue = mid $ head sortedByDate
         oldestRate = mid $ last sortedByDate
-        changePercent = if oldestRate /= 0 
-                       then ((currentRate - oldestRate) / oldestRate) * 100
+        changePercentValue = if oldestRate /= 0 
+                       then ((currentRateValue - oldestRate) / oldestRate) * 100
                        else 0
-        volatility = calculateVolatility rateValues avgRate
-        trend = determineTrend (map mid sortedByDate)
+        volatilityValue = calculateVolatility rateValues avgRate
+        trendValue = determineTrend (map mid sortedByDate)
     in CurrencyAnalysis
         { currencyCode = code ex
         , currencyName = currency ex
-        , currentRate = currentRate
+        , currentRate = currentRateValue
         , averageRate = avgRate
-        , minRate = minRate
-        , maxRate = maxRate
-        , volatility = volatility
-        , trend = trend
-        , changePercent = changePercent
+        , minRate = minRateValue
+        , maxRate = maxRateValue
+        , volatility = volatilityValue
+        , trend = trendValue
+        , changePercent = changePercentValue
         }
 
 calculateVolatility :: [Double] -> Double -> Double
-calculateVolatility rates avg = 
-    let variances = map (\r -> (r - avg) ** 2) rates
+calculateVolatility rateList avg = 
+    let variances = map (\r -> (r - avg) ** 2) rateList
         variance = sum variances / fromIntegral (length variances)
     in sqrt variance
 
 determineTrend :: [Double] -> String
-determineTrend rates
-    | length rates < 3 = "Insufficient data"
-    | head rates > last rates = "Rising"
-    | head rates < last rates = "Falling"
+determineTrend rateList
+    | length rateList < 3 = "Insufficient data"
+    | head rateList > last rateList = "Rising"
+    | head rateList < last rateList = "Falling"
     | otherwise = "Stable"
 
 printCurrencyData :: ExchangeRates -> CurrencyAnalysis -> IO ()
@@ -112,8 +147,8 @@ printCurrencyData ex analysis = do
     putStrLn $ "CURRENCY: " ++ currencyName analysis ++ " (" ++ currencyCode analysis ++ ")"
     putStrLn $ replicate 50 '='
     
-    putStrLn "\n📊 DETAILED RATES:"
-    mapM_ printRate (sortBy (comparing (Data.Ord.Down . effectiveDate)) (rates ex))
+    putStrLn "\n📊 LATEST RATES (last 5 days):"
+    mapM_ printRate $ take 5 $ sortBy (comparing (Data.Ord.Down . effectiveDate)) (rates ex)
     
     putStrLn "\n📈 STATISTICAL ANALYSIS:"
     printf "  Current rate:      %.4f PLN\n" (currentRate analysis)
@@ -168,17 +203,12 @@ printRecommendation analysis = do
            recommendation 
            (changePercent analysis)
 
-fetchDataForCurrency :: String -> IO ()
-fetchDataForCurrency curr = do
-    analysis <- fetchAndAnalyzeCurrency curr
-    return ()
-
 exportToCSV :: [CurrencyAnalysis] -> IO ()
 exportToCSV analyses = do
     let csvHeader = "Currency,Current Rate,Average,Min,Max,Volatility,Change %,Trend\n"
     let csvRows = map analysisToCSV analyses
-    writeFile "currency_analysis.csv" (csvHeader ++ unlines csvRows)
-    putStrLn "✅ Data exported to currency_analysis.csv"
+    writeFile "results/basic_currency_analysis.csv" (csvHeader ++ unlines csvRows)
+    putStrLn "✅ Basic analysis exported to results/basic_currency_analysis.csv"
 
 analysisToCSV :: CurrencyAnalysis -> String
 analysisToCSV analysis = 
@@ -190,3 +220,50 @@ analysisToCSV analysis =
     show (volatility analysis) ++ "," ++
     show (changePercent analysis) ++ "," ++
     trend analysis
+
+exportAdvancedAnalysis :: [(String, [Double])] -> IO ()
+exportAdvancedAnalysis currencyData = do
+    let correlations = calculateCorrelationMatrix currencyData
+    let corrHeader = "Currency1,Currency2,Correlation\n"
+    let corrRows = map (\(c1, c2, corr) -> c1 ++ "," ++ c2 ++ "," ++ show corr) correlations
+    writeFile "results/correlation_matrix.csv" (corrHeader ++ unlines corrRows)
+    
+    let trendHeader = "Currency,Predicted_Rate,Trend_Strength,VaR_95%,Max_Drawdown\n"
+    let trendRows = map formatTrendData currencyData
+    writeFile "results/trend_analysis.csv" (trendHeader ++ unlines trendRows)
+    
+    let fullReport = generateAdvancedReport currencyData
+    writeFile "results/advanced_analysis_report.txt" (unlines fullReport)
+    
+    putStrLn "✅ Advanced analysis exported to results/ directory"
+
+formatTrendData :: (String, [Double]) -> String
+formatTrendData (currCode, rateList) =
+    let prediction = predictNextValue rateList
+        strength = trendStrength rateList
+        var95 = calculateVaR 0.95 rateList
+        maxDD = maxDrawdown rateList
+    in currCode ++ "," ++ 
+       show prediction ++ "," ++ 
+       show strength ++ "," ++ 
+       show var95 ++ "," ++ 
+       show maxDD
+
+fetchDateRatesForCharts :: String -> IO (String, [(String, Double)])
+fetchDateRatesForCharts curr = do
+    let url = "https://api.nbp.pl/api/exchangerates/rates/A/" ++ curr ++ "/last/" ++ show numOfLastCurr ++ "/?format=json"
+    request <- parseRequest url
+    response <- httpLBS request
+    let body = getResponseBody response
+    case decode body :: Maybe ExchangeRates of
+        Just ex -> do
+            let dateRatePairs = [(effectiveDate rate, mid rate) | rate <- reverse (rates ex)]
+            return (curr, dateRatePairs)
+        Nothing -> do
+            putStrLn $ "Error parsing date data for charts: " ++ curr
+            return (curr, [])
+
+fetchDataForCurrency :: String -> IO ()
+fetchDataForCurrency curr = do
+    _ <- fetchAndAnalyzeCurrency curr
+    return ()
