@@ -147,7 +147,7 @@ correlationReport currencyData = do
     mapM_ (\(c1, c2, corr) -> 
         tell [printf "    %s ↔ %s: %+.3f" c1 c2 corr]) correlations
     
-    when (not $ null strongCorrelations) $ do
+    whenCondition (not $ null strongCorrelations) $ do
         tell ["", "    🔍 STRONG CORRELATIONS (|r| > 0.7):"]
         mapM_ (\(c1, c2, corr) -> 
             tell [printf "    🔗 %s ↔ %s: %+.3f" c1 c2 corr]) strongCorrelations
@@ -207,6 +207,6 @@ technicalReport currencyData = do
         tell [printf "      RSI Signal: %s" rsiSignal]
         tell [""]) currencyData
 
-when :: Monad m => Bool -> m () -> m ()
-when True action = action
-when False _ = return ()
+whenCondition :: Monad m => Bool -> m () -> m ()
+whenCondition True action = action
+whenCondition False _ = return ()
